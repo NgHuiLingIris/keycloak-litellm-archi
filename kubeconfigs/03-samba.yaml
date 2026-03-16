@@ -1,0 +1,95 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: samba-etc
+  namespace: keycloak
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: samba-lib
+  namespace: keycloak
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: samba-dc
+  namespace: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: samba-dc
+  template:
+    metadata:
+      labels:
+        app: samba-dc
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: samba-dc
+          image: instantlinux/samba-dc:latest
+          env:
+            - name: DOMAIN_ACTION
+              value: provision
+            - name: REALM
+              value: ad.example.com
+          ports:
+            - containerPort: 389
+            - containerPort: 636
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: samba-etc
+              mountPath: /etc/samba
+            - name: samba-lib
+              mountPath: /var/lib/samba
+            - name: samba-secret
+              mountPath: /run/secrets
+              readOnly: true
+      volumes:
+        - name: samba-etc
+          persistentVolumeClaim:
+            claimName: samba-etc
+        - name: samba-lib
+          persistentVolumeClaim:
+            claimName: samba-lib
+        - name: samba-secret
+          secret:
+            secretName: samba-admin-password
+            items:
+              - key: samba-admin-password
+                path: samba-admin-password
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: samba-dc
+  namespace: keycloak
+spec:
+  selector:
+    app: samba-dc
+  ports:
+    - name: ldap
+      port: 389
+      targetPort: 389
+    - name: ldaps
+      port: 636
+      targetPort: 636
+  type: ClusterIP

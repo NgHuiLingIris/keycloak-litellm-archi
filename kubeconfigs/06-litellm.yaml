@@ -1,0 +1,125 @@
+---
+# LiteLLM config — ollama URL updated to cluster-internal DNS
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: keycloak
+data:
+  config.yaml: |
+    model_list:
+      - model_name: tinyllama
+        litellm_params:
+          model: ollama/tinyllama
+          api_base: http://ollama.keycloak.svc.cluster.local:11434
+
+    litellm_settings:
+      default_internal_user_params:
+        user_role: "internal_user"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: litellm
+  template:
+    metadata:
+      labels:
+        app: litellm
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z postgres.keycloak.svc.cluster.local 5432; do
+                echo "waiting for postgres..."; sleep 2
+              done
+        - name: wait-for-keycloak
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z keycloak.keycloak.svc.cluster.local 8080; do
+                echo "waiting for keycloak..."; sleep 5
+              done
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:main-latest
+          args: ["--config", "/app/config.yaml"]
+          env:
+            - name: LITELLM_LOG
+              value: INFO
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-sso
+                  key: LITELLM_MASTER_KEY
+            - name: UI_USERNAME
+              value: admin
+            - name: UI_PASSWORD
+              value: admin123
+            - name: DATABASE_URL
+              value: postgresql://keycloak:keycloak@postgres.keycloak.svc.cluster.local/litellm
+            - name: PROXY_BASE_URL
+              value: "http://localhost:4000"
+            - name: GENERIC_CLIENT_ID
+              value: litellm
+            - name: GENERIC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-sso
+                  key: GENERIC_CLIENT_SECRET
+            # Browser-facing — must match the issuer Keycloak embeds in tokens (http://localhost:8080/...)
+            - name: GENERIC_AUTHORIZATION_ENDPOINT
+              value: "http://localhost:8080/realms/master/protocol/openid-connect/auth"
+            # Internal — LiteLLM calls these server-side, cluster DNS resolves keycloak directly
+            - name: GENERIC_TOKEN_ENDPOINT
+              value: "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/token"
+            - name: GENERIC_USERINFO_ENDPOINT
+              value: "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/userinfo"
+            - name: GENERIC_REDIRECT_URI
+              value: "http://localhost:4000/sso/callback"
+            - name: STORE_MODEL_IN_DB
+              value: "True"
+          ports:
+            - containerPort: 4000
+          readinessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 10
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+      volumes:
+        - name: config
+          configMap:
+            name: litellm-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: keycloak
+spec:
+  selector:
+    app: litellm
+  ports:
+    - port: 4000
+      targetPort: 4000
+      nodePort: 30000
+  type: NodePort

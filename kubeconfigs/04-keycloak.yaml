@@ -1,0 +1,93 @@
+---
+# keycloak-truststore ConfigMap is NOT defined here.
+# It is created during setup after the TLS cert is generated.
+# See setup.kube.md — Phase 1 step 8: "Create keycloak-truststore ConfigMap"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z postgres.keycloak.svc.cluster.local 5432; do
+                echo "waiting for postgres..."; sleep 2
+              done
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.5.4
+          args: ["start-dev", "--import-realm"]
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: jdbc:postgresql://postgres.keycloak.svc.cluster.local/keycloak
+            - name: KC_DB_USERNAME
+              value: keycloak
+            - name: KC_DB_PASSWORD
+              value: keycloak
+            - name: KEYCLOAK_ADMIN
+              value: admin
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              value: admin
+            - name: KC_HOSTNAME
+              value: localhost
+            - name: KC_HOSTNAME_PORT
+              value: "8080"
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HOSTNAME_STRICT_HTTPS
+              value: "false"
+            - name: KC_TRUSTSTORE_PATHS
+              value: /opt/keycloak/truststore/samba-ca.pem
+            - name: JAVA_OPTS
+              value: "-Xms512m -Xmx1024m"
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /realms/master
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 10
+          volumeMounts:
+            - name: truststore
+              mountPath: /opt/keycloak/truststore
+              readOnly: true
+      volumes:
+        - name: truststore
+          configMap:
+            name: keycloak-truststore
+            optional: true
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080
+  type: NodePort
