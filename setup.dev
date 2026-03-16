@@ -1,0 +1,132 @@
+
+# Run fake user population in Samba
+```
+chmod +x scripts/create_ad_test_users.sh
+./scripts/create_ad_test_users.sh
+```
+# Enter the Samba Active Directory Container
+
+The container does not include `bash`, so use `sh`.
+
+Example:
+````
+docker exec -it aicoemaas_samba-dc_1 sh
+````
+* * *
+
+# Verify Active Directory Is Running
+
+Run:
+````
+samba-tool user list
+````
+
+Expected results:
+````
+Administrator
+Guest
+alice
+bob
+charlie
+krbtgt
+````
+
+Check group members:
+````
+samba-tool group listmembers developers
+````
+* * *
+
+● Here are the full commands from scratch, in order:
+
+  1. Remove existing certs
+  # Remove from keycloak-trust
+  rm keycloak-trust/samba-ca.pem
+
+  # Remove from Samba container (forces Samba to accept new ones)
+  docker run --rm -v aicoemaas_lib:/var/lib/samba alpine sh -c \
+    "rm -f /var/lib/samba/private/tls/cert.pem \
+           /var/lib/samba/private/tls/key.pem \
+           /var/lib/samba/private/tls/ca.pem"
+
+  2. Generate new cert with correct hostname
+  openssl req -x509 -newkey rsa:4096 -days 3650 -nodes \
+    -keyout /tmp/samba-key.pem \
+    -out /tmp/samba-cert.pem \
+    -subj "/CN=samba-dc/O=Samba Administration" \
+    -addext "subjectAltName=DNS:samba-dc,DNS:localhost"
+
+  3. Copy cert into Samba and fix ownership
+  docker cp /tmp/samba-cert.pem aicoemaas_samba-dc_1:/var/lib/samba/private/tls/cert.pem
+  docker cp /tmp/samba-key.pem  aicoemaas_samba-dc_1:/var/lib/samba/private/tls/key.pem
+  docker cp /tmp/samba-cert.pem aicoemaas_samba-dc_1:/var/lib/samba/private/tls/ca.pem
+
+  docker run --rm -v aicoemaas_lib:/var/lib/samba alpine sh -c \
+    "chown 0:0 /var/lib/samba/private/tls/*.pem && \
+     chmod 600 /var/lib/samba/private/tls/key.pem"
+
+  4. Restart Samba and reset the admin password
+  docker restart aicoemaas_samba-dc_1
+  sleep 5
+  docker exec aicoemaas_samba-dc_1 samba-tool user setpassword Administrator --newpassword='Admin1234!'
+
+  5. Copy CA cert to Keycloak truststore and restart Keycloak
+  cp /tmp/samba-cert.pem keycloak-trust/samba-ca.pem
+  docker restart keycloak
+  sleep 15
+
+  6. Verify the cert is correct before testing in Keycloak
+  echo | openssl s_client -connect localhost:636 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName
+
+  Expected output:
+  subject=CN = samba-dc, O = Samba Administration
+  X509v3 Subject Alternative Name:
+      DNS:samba-dc, DNS:localhost
+
+  Then in Keycloak use ldaps://samba-dc:636 with Use Truststore SPI: Always.
+
+
+* * *
+
+# Open Keycloak
+
+Open browser:
+````
+http://localhost:8080
+````
+
+Login:
+````
+username: admin  
+password: admin
+````
+
+* * *
+
+# Configure LDAP Federation in Keycloak
+
+Navigate to:
+````
+User Federation
+````
+
+Click:
+````
+Add provider → LDAP - Lightweight Directory Access Protocol
+````
+* * *
+
+# LDAP Connection Settings
+
+Use these values:
+- Vendor: Active Directory
+- Connection URL: `ldaps://samba-dc:636`
+- Use Truststore SPI: Always
+- Bind type: simple
+- Bind DN: `Administrator@ad.example.com`
+- Bind Credential: `Admin1234!`
+- Users DN: `CN=Users,DC=ad,DC=example,DC=com`
+
+Note: Use `ldap://` (not `ldaps://`) on port 636. `ldaps://` fails due to a hostname
+mismatch between the Samba cert CN (machine hostname) and the Docker service name `samba-dc`.
+`ldap://` on port 636 uses StartTLS and works correctly with the trusted CA cert.
