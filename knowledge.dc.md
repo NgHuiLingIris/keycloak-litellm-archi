@@ -88,6 +88,9 @@ Common cert errors:
 | `LDAP connection has been closed` | Bind dropped after connect | Wrong password or timing — reset with `samba-tool` |
 | `Invalid credentials (49)` | Wrong bind password | Re-run `samba-tool user setpassword` |
 | `user_not_found` on valid user | `Referral=follow` causes Keycloak to chase AD referrals to `ad.example.com` which is unresolvable inside Docker | Set Referral to `ignore` in LDAP federation settings |
+| `Couldn't resolve groups from LDAP` / Internal Server Error on login | `Preserve Group Inheritance` is ON — Keycloak tries to resolve AD built-in groups (e.g. `Group Policy Creator Owners`) whose members include users treated as groups, causing a `GroupTreeResolveException` during token generation | Set `Preserve Group Inheritance` OFF and `Ignore Missing Groups` ON in the `litellm-groups` LDAP group mapper |
+| `CODE_TO_TOKEN_ERROR: invalid_client_credentials` / Internal Server Error after login redirect | `GENERIC_CLIENT_SECRET` in `docker-compose.yml` does not match the client secret Keycloak has for the `litellm` client — happens when the client is recreated or the secret is rotated without updating the env var | Go to **Clients → litellm → Credentials**, copy the current secret, update `GENERIC_CLIENT_SECRET` in `docker-compose.yml`, then restart: `docker compose up -d litellm` |
+| `404 Not Found` on `/sso/login` | The `/sso/login` endpoint does not exist in LiteLLM — this was never a valid route | Use `/sso/key/generate` as the SSO login URL |
 
 Note: The Samba admin password is lost on container restart — always reset it after restarting.
 
@@ -252,6 +255,110 @@ docker exec keycloak-db psql -U keycloak -c "CREATE DATABASE litellm;"
 
 ---
 
+## LiteLLM User Roles
+
+SSO users from Keycloak are assigned a role in LiteLLM based on their AD group membership.
+
+| Role | Create own API keys | Manage users/teams/models |
+|---|---|---|
+| `internal_user_viewer` | No | No |
+| `internal_user` | Yes (own keys only) | No |
+| `proxy_admin_viewer` | No | Read-only admin |
+| `proxy_admin` | Yes | Yes |
+
+### Group-based role assignment (recommended)
+
+LiteLLM reads a groups claim from the Keycloak userinfo response and maps group names to roles.
+This updates roles on **every login** — existing users are re-evaluated each time they log in.
+
+Requires `STORE_MODEL_IN_DB: "True"` in `docker-compose.yml` under the `litellm` service.
+
+Configuration is set via the LiteLLM API (run once after first `docker compose up`):
+```bash
+curl -s -X PATCH http://localhost:4000/update/sso_settings \
+  -H "Authorization: Bearer sk-1234" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "role_mappings": {
+      "provider": "generic",
+      "group_claim": "litellm-groups",
+      "default_role": "internal_user_viewer",
+      "roles": {"internal_user": ["developers"]}
+    }
+  }'
+```
+
+`role_mappings` fields:
+| Field | Value | Meaning |
+|---|---|---|
+| `provider` | `generic` | Must be `generic` or `okta` for group-based mapping |
+| `group_claim` | `litellm-groups` | Claim name in the Keycloak userinfo that contains the groups array — must match the Token Claim Name set in the Keycloak client mapper |
+| `default_role` | `internal_user_viewer` | Role for users not in any mapped group |
+| `roles` | `{"internal_user": ["developers"]}` | Map LiteLLM role → list of AD group names |
+
+Requires Keycloak to include group membership in the userinfo response (see Keycloak setup below).
+
+### Keycloak: LDAP Group Mapper (syncs AD groups to Keycloak)
+
+Under **User Federation → LDAP → Mappers → Add mapper**:
+
+| Field | Value |
+|---|---|
+| Name | `litellm-groups` |
+| Mapper Type | `group-ldap-mapper` |
+| LDAP Groups DN | `CN=Users,DC=ad,DC=example,DC=com` |
+| Group Object Classes | `group` |
+| Membership LDAP Attribute | `member` |
+| Membership Attribute Type | `DN` |
+| Membership User LDAP Attribute | `cn` |
+| Groups Path | `/` |
+| Preserve Group Inheritance | OFF |
+| Ignore Missing Groups | ON |
+
+**Preserve Group Inheritance** — when ON, Keycloak resolves the full nested group tree from AD. AD's built-in groups (e.g. `Group Policy Creator Owners`) contain the `Administrator` user as a member; Keycloak tries to find `Administrator` as a group, fails, and throws an exception that surfaces as an Internal Server Error on every login. Turn this OFF to flatten the group list.
+
+**Ignore Missing Groups** — when ON, Keycloak skips any group reference it cannot resolve instead of aborting. Keep this ON as a safeguard against other built-in AD objects that are not standard groups.
+
+After saving, click **Sync LDAP Groups to Keycloak**.
+
+### Keycloak: Client Group Mapper (includes groups in userinfo)
+
+Under **Clients → litellm → Client Scopes → litellm-dedicated → Mappers → Configure a new mapper**:
+
+| Field | Value |
+|---|---|
+| Mapper Type | `Group Membership` |
+| Name | `litellm-groups` |
+| Token Claim Name | `litellm-groups` |
+| Full group path | OFF |
+| Add to ID token | ON |
+| Add to access token | ON |
+| Add to userinfo | ON |
+
+### Default role fallback (new users with no group match)
+
+`litellm_config.yaml` sets the role for new users when `role_mappings` is not configured or when
+the SSO response provides no groups. With `role_mappings`, the `default_role` field takes precedence.
+
+```yaml
+litellm_settings:
+  default_internal_user_params:
+    user_role: "internal_user_viewer"
+```
+
+**Note:** `DEFAULT_USER_ROLE` as a docker-compose env var does not exist in LiteLLM — it has no effect.
+
+### Fixing roles for existing users manually
+
+If a user exists with the wrong role and hasn't logged in yet after the group mapper is configured:
+```sql
+UPDATE "LiteLLM_UserTable" SET user_role = 'internal_user_viewer'
+WHERE user_id = 'charlie';
+```
+Or via the LiteLLM admin UI: Users → select user → change role.
+
+---
+
 ## SSO Token Issuer Mismatch (Internal Server Error)
 
 **Symptom:** Login succeeds in Keycloak but LiteLLM returns Internal Server Error.
@@ -295,7 +402,7 @@ Useful curl commands for verifying LiteLLM and SSO state.
 
 **Check if an endpoint exists and where it redirects**
 ```bash
-curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}" http://localhost:4000/sso/login
+curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}" http://localhost:4000/sso/key/generate
 ```
 `-o /dev/null` discards the body. `-w` prints only the HTTP status code and redirect URL.
 Use this to quickly confirm whether an endpoint exists (404 = not found) or redirects (307).

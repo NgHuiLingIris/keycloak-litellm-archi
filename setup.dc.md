@@ -132,13 +132,13 @@ LDAP Connection Settings:
 | Bind type | simple |
 | Bind DN | `Administrator@ad.example.com` |
 | Bind Credential | `Admin1234!` |
-| Users DN | `CN=Users,DC=ad,DC=example,DC=com` |
 
 Recommended field values (see knowledge.md for full explanation of each field):
 
 | Field | Value |
 |---|---|
 | Edit Mode | `READ_ONLY` |
+| Users DN | `CN=Users,DC=ad,DC=example,DC=com` |
 | Username LDAP attribute | `sAMAccountName` — not `cn`, wrong value causes login failure |
 | RDN LDAP attribute | `cn` |
 | UUID LDAP attribute | `objectGUID` |
@@ -170,7 +170,7 @@ This enables SSO redirect: LiteLLM → Keycloak (AD login) → back to LiteLLM.
 5. Turn **Client authentication** ON
 6. Turn **Standard Flow** ON
 7. Turn **Direct Access Grants** OFF
-8. Turn **Service Account Roles** ON
+8. Turn **Service Account Roles** OFF
 9. Click **Next → Save**
 10. Fill in the URL fields:
 
@@ -189,12 +189,17 @@ This enables SSO redirect: LiteLLM → Keycloak (AD login) → back to LiteLLM.
 
 # Configure LiteLLM SSO (docker-compose.yml)
 
-In `docker-compose.yml`, under the `litellm` service environment, replace `<YOUR_CLIENT_SECRET>`
-with the secret copied from Keycloak:
+Open `docker-compose.yml` and update `GENERIC_CLIENT_SECRET` under the `litellm` service with
+the client secret copied from Keycloak's **Credentials** tab. The file already has a value here
+— replace it with your newly generated secret:
 
 ````
-GENERIC_CLIENT_SECRET: "<YOUR_CLIENT_SECRET>"
+GENERIC_CLIENT_SECRET: "<paste secret from Keycloak Credentials tab>"
 ````
+
+If the secret in `docker-compose.yml` does not match Keycloak, every login attempt returns
+Internal Server Error (`invalid_client_credentials`). This must be updated every time the
+Keycloak client is recreated.
 
 The token and userinfo endpoints must use `host.docker.internal` (not `keycloak`) to avoid
 a token issuer mismatch. Keycloak issues tokens with issuer `http://localhost:8080/...` (what
@@ -223,7 +228,7 @@ docker exec ollama ollama pull tinyllama
 
 Open:
 ````
-http://localhost:4000/sso/login
+http://localhost:4000/sso/key/generate
 ````
 
 You will be redirected to Keycloak. Log in as a test user:
@@ -245,7 +250,133 @@ username: admin
 password: admin123
 ````
 
-API master key:
+API master key (admin use only):
 ````
 sk-1234
+````
+
+* * *
+
+# LiteLLM API Keys for SSO Users
+
+SSO users (e.g. alice) log in via Keycloak and are assigned the `internal_user` role,
+which allows them to generate their own personal API keys.
+
+To generate a key as alice:
+1. Log in via SSO at `http://localhost:4000/ui/login`
+2. Navigate to **API Keys → Create New Key**
+3. Use the generated key for API calls:
+
+````
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer <alice-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "tinyllama", "messages": [{"role": "user", "content": "hello"}]}'
+````
+
+If the Create Key button is missing, the user's role is `internal_user_viewer`.
+This is controlled by AD group membership (see Group-Based Role Mapping section below).
+
+* * *
+
+# Group-Based Role Mapping (developers → internal_user)
+
+AD group members of `developers` get `internal_user` role in LiteLLM (can create API keys).
+All other AD users get `internal_user_viewer` (read-only).
+
+Roles are re-evaluated on **every login** — changing group membership in AD takes effect on next login.
+
+If there is segregation, continue and update `litellm_config.yaml` with:
+```yaml
+litellm_settings:
+  default_internal_user_params:
+    user_role: "internal_user_viewer"
+```
+Then restart: `docker compose up -d litellm`
+
+## Step 1: Keycloak — LDAP Group Mapper (sync AD groups to Keycloak)
+
+Navigate to: **User Federation → LDAP → Mappers → Add mapper**
+
+| Field | Value |
+|---|---|
+| Name | `litellm-groups` |
+| Mapper Type | `group-ldap-mapper` |
+| LDAP Groups DN | `CN=Users,DC=ad,DC=example,DC=com` |
+| Group Object Classes | `group` |
+| Membership LDAP Attribute | `member` |
+| Membership Attribute Type | `DN` |
+| Membership User LDAP Attribute | `cn` |
+| Groups Path | `/` |
+| Preserve Group Inheritance | OFF |
+| Ignore Missing Groups | ON |
+
+Click **Save**, then click **Sync LDAP Groups to Keycloak**.
+
+## Step 2: Keycloak — Client Group Mapper (include groups in userinfo)
+
+Navigate to: **Clients → litellm → Client Scopes → litellm-dedicated → Mappers → Configure a new mapper**
+
+| Field | Value |
+|---|---|
+| Mapper Type | `Group Membership` |
+| Name | `litellm-groups` |
+| Token Claim Name | `litellm-groups` |
+| Full group path | OFF |
+| Add to ID token | ON |
+| Add to access token | ON |
+| Add to userinfo | ON |
+
+Click **Save**.
+
+## Step 3: LiteLLM — Configure role_mappings via API
+
+`STORE_MODEL_IN_DB: "True"` must be set in `docker-compose.yml` under the `litellm` service
+(already set). Restart LiteLLM if you just added it:
+````
+docker compose up -d litellm
+````
+
+Then call the SSO settings API with the master key:
+````
+curl -s -X PATCH http://localhost:4000/update/sso_settings \
+  -H "Authorization: Bearer sk-1234" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "role_mappings": {
+      "provider": "generic",
+      "group_claim": "litellm-groups",
+      "default_role": "internal_user_viewer",
+      "roles": {"internal_user": ["developers"]}
+    }
+  }'
+````
+After runnign this curl, you would need to restart LiteLLM.
+
+This saves the role_mappings to the `LiteLLM_SSOConfig` table in the database.
+Re-run this command any time you need to change the group-to-role mapping.
+
+## Step 4: Test
+
+Log in as alice (in developers group) — should see "Create New Key" button.
+Log in as charlie (not in developers group) — should only see view access.
+
+Note: Existing users with wrong roles will be corrected automatically on next login.
+To fix immediately without waiting for login:
+````
+docker exec keycloak-db psql -U keycloak -d litellm -c \
+  "UPDATE \"LiteLLM_UserTable\" SET user_role = 'internal_user_viewer' WHERE user_id = 'charlie';"
+````
+
+# Adding Models to LiteLLM
+
+Edit `litellm_config.yaml` to add models, then restart:
+
+````
+docker compose up -d litellm
+````
+
+Pull new Ollama models first:
+````
+docker exec ollama ollama pull <model-name>
 ````
