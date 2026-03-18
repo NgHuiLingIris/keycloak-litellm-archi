@@ -184,7 +184,7 @@ stringData:
 - Inspected `LLMConfig` table for configuration state
 
 **LiteLLM Enterprise SSO Restriction**
-- LiteLLM community version enforces a hard limit: **SSO is only usable for 5 hours**, after which it blocks SSO login entirely
+- LiteLLM community version enforces a hard limit: **SSO is only usable for 5 users**, after which it blocks SSO login entirely
 - The restriction is **tracked in PostgreSQL** (not in the container) — so simply restarting the pod does nothing, the timer survives restarts
 - Attempted `LITELLM_LICENSE=test` as a dummy license value — did not bypass the restriction
 - **Workaround: drop and recreate the database schema**, which wipes the SSO trial tracking along with all other LiteLLM data (users, keys, configs)
