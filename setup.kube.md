@@ -257,7 +257,7 @@ Recommended settings:
 5. Turn **Client authentication** ON
 6. Turn **Standard Flow** ON
 7. Turn **Direct Access Grants** OFF
-8. Turn **Service Account Roles** OFF
+8. Turn **Service Account Roles** ON
 9. Click **Next → Save**
 10. Fill in the URL fields:
 

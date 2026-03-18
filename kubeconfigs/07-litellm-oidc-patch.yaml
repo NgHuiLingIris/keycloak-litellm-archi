@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: litellm
+spec:
+  template:
+    spec:
+      containers:
+        - name: litellm
+          env:
+            - name: GENERIC_CLIENT_ID
+              value: litellm
+            - name: GENERIC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-oidc
+                  key: GENERIC_CLIENT_SECRET
+            - name: GENERIC_AUTHORIZATION_ENDPOINT
+              value: "http://keycloak.maas.paf.com/realms/master/protocol/openid-connect/auth"
+            - name: GENERIC_TOKEN_ENDPOINT
+              value: "http://keycloak.maas.paf.com/realms/master/protocol/openid-connect/token"
+            - name: GENERIC_USERINFO_ENDPOINT
+              value: "http://keycloak.maas.paf.com/realms/master/protocol/openid-connect/userinfo"
+            - name: GENERIC_REDIRECT_URI
+              value: "http://litellm.maas.paf.com/sso/callback"
+            - name: PROXY_BASE_URL
+              value: "http://litellm.maas.paf.com"

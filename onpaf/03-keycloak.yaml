@@ -55,13 +55,17 @@ spec:
             - name: KEYCLOAK_ADMIN_PASSWORD
               value: admin
             - name: KC_HOSTNAME
-              value: keycloak.maas.paf.com
+              value: "http://keycloak.maas.paf.com"
+            - name: KC_HOSTNAME_URL
+              value: "http://keycloak.maas.paf.com"
             - name: KC_HOSTNAME_PORT
-              value: "80"
+              value: "-1"
             - name: KC_HOSTNAME_STRICT
               value: "false"
             - name: KC_HOSTNAME_STRICT_HTTPS
               value: "false"
+            - name: KC_PROXY_HEADERS
+              value: "xforwarded"
             - name: JAVA_OPTS
               value: "-Xms512m -Xmx1024m"
           ports:
@@ -105,6 +109,7 @@ metadata:
   namespace: keycloak
   annotations:
     nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    nginx.ingress.kubernetes.io/proxy-set-headers: "X-Forwarded-For $proxy_add_x_forwarded_for"
 spec:
   ingressClassName: nginx
   rules:
