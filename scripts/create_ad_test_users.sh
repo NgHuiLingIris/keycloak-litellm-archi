@@ -52,14 +52,14 @@ add_member() {
   run_in_container "samba-tool group addmembers ${GROUP} ${USER} || true"
 }
 
-echo "Creating test users: alice, bob, charlie (password: Password123!)"
-create_user alice Password123!
-create_user bob Password123!
-create_user charlie Password123!
+echo "Creating test users: ellie, freddy, helen (password: Password123!)"
+create_user ellie Password123!
+create_user freddy Password123!
+create_user helen Password123!
 
 echo "Creating group: developers and adding members"
 create_group developers
-add_member developers alice
-add_member developers bob
+add_member developers ellie
+add_member developers freddy
 
 echo "Done. Verify with: docker exec -it ${CONTAINER} sh -c 'samba-tool user list; samba-tool group listmembers developers'"

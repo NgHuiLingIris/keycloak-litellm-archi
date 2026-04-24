@@ -233,7 +233,7 @@ http://localhost:4000/sso/key/generate
 
 You will be redirected to Keycloak. Log in as a test user:
 ````
-username: alice
+username: freddy
 password: Password123!
 ````
 
