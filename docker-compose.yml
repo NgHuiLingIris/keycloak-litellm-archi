@@ -8,6 +8,7 @@ services:
       - CAP_SYS_ADMIN
     environment:
       DOMAIN_ACTION: ${SAMBA_DOMAIN_ACTION:-start}
+      # DOMAIN_ACTION: provision
       REALM: ${SAMBA_REALM:-ad.example.com}
     volumes:
       - etc:/etc/samba
@@ -94,7 +95,7 @@ services:
       DATABASE_URL: postgresql://keycloak:keycloak@postgres/litellm
       PROXY_BASE_URL: "http://localhost:4000"
       GENERIC_CLIENT_ID: "litellmclient"
-      GENERIC_CLIENT_SECRET: "3vipPbbodUtVt9DZxTgPdM733fv2ipWm"
+      GENERIC_CLIENT_SECRET: "xLYzlSDjDlxXCHBEo7SplV4wQkIfsODC"
       GENERIC_AUTHORIZATION_ENDPOINT: "http://localhost:8080/realms/master/protocol/openid-connect/auth"
       GENERIC_TOKEN_ENDPOINT: "http://host.docker.internal:8080/realms/master/protocol/openid-connect/token"
       GENERIC_USERINFO_ENDPOINT: "http://host.docker.internal:8080/realms/master/protocol/openid-connect/userinfo"

@@ -2,7 +2,7 @@
 
 First-time AD provisioning only:
 ```
-export SAMBA_DOMAIN_ACTION=provision
+export SAMBA_DOMAIN_ACTION=provision (edit from DOMAIN_ACTION)
 ```
 
 Prepare the keycloak-trust cert first.
@@ -90,7 +90,7 @@ sleep 5
 docker exec aicoemaas_samba-dc_1 samba-tool user setpassword Administrator --newpassword='Admin1234!'
 
 # 5. Copy CA cert to Keycloak truststore and restart Keycloak
-cp /tmp/samba-cert.pem keycloak-trust/samba-ca.pem
+sudo cp /tmp/samba-cert.pem keycloak-trust/samba-ca.pem
 docker compose up -d keycloak
 sleep 15
 
