@@ -72,7 +72,10 @@ services:
     restart: unless-stopped
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-latest
+    build:
+      context: ./litellm-src
+      dockerfile: Dockerfile
+    image: aicoemaas/litellm-sso-unlimited:local
     container_name: litellm
     command: ["--config", "/app/config.yaml"]
     depends_on:
@@ -90,34 +93,45 @@ services:
       UI_PASSWORD: admin123
       DATABASE_URL: postgresql://keycloak:keycloak@postgres/litellm
       PROXY_BASE_URL: "http://localhost:4000"
-      GENERIC_CLIENT_ID: "litellmbifrost"
+      GENERIC_CLIENT_ID: "litellmclient"
       GENERIC_CLIENT_SECRET: "3vipPbbodUtVt9DZxTgPdM733fv2ipWm"
       GENERIC_AUTHORIZATION_ENDPOINT: "http://localhost:8080/realms/master/protocol/openid-connect/auth"
       GENERIC_TOKEN_ENDPOINT: "http://host.docker.internal:8080/realms/master/protocol/openid-connect/token"
       GENERIC_USERINFO_ENDPOINT: "http://host.docker.internal:8080/realms/master/protocol/openid-connect/userinfo"
       GENERIC_REDIRECT_URI: "http://localhost:4000/sso/callback"
+      LITELLM_FREE_SSO_USER_LIMIT: "0"
       STORE_MODEL_IN_DB: "True"
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
   bifrost:
-    image: maximhq/bifrost:latest
+    build:
+      context: ./bifrost-src
+      dockerfile: transports/Dockerfile
+    image: aicoemaas/bifrost-oidc:local
     container_name: bifrost
     depends_on:
       - ollama
+      - keycloak
+    network_mode: host
     environment:
       APP_HOST: "0.0.0.0"
-      APP_PORT: "8080"
+      APP_PORT: "4001"
       LOG_LEVEL: "info"
       LOG_STYLE: "pretty"
-    ports:
-      - "4001:8080"
+      BIFROST_ADMIN_USERNAME: ${BIFROST_ADMIN_USERNAME:-admin}
+      BIFROST_ADMIN_PASSWORD: ${BIFROST_ADMIN_PASSWORD:-admin123}
+      BIFROST_OIDC_ISSUER_URL: "http://localhost:8080/realms/master"
+      BIFROST_OIDC_CLIENT_ID: "bifrostclient"
+      BIFROST_OIDC_CLIENT_SECRET: "xOBDv9I1QYqUPZs0jwDY76sn7rrp4BD2"
+      BIFROST_OIDC_REDIRECT_URL: "http://localhost:4001/api/session/oidc/callback"
+      BIFROST_OIDC_SCOPES: "openid,profile,email"
+      BIFROST_OIDC_POST_LOGIN_PATH: "/workspace"
     volumes:
       - bifrost_data:/app/data
+      - ./bifrost-config.json:/app/data/config.json:ro
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
 
 volumes:

@@ -53,6 +53,9 @@ add_member() {
 }
 
 echo "Creating test users: ellie, freddy, helen (password: Password123!)"
+create_user alice Password123!
+create_user bob Password123!
+create_user charlie Password123!
 create_user ellie Password123!
 create_user freddy Password123!
 create_user helen Password123!
