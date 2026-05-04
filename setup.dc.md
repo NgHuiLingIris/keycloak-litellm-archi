@@ -1,5 +1,15 @@
 # Start Services
 
+First-time AD provisioning only:
+```
+export SAMBA_DOMAIN_ACTION=provision
+```
+
+Prepare the keycloak-trust cert first.
+
+Normal starts (after the domain already exists) should use the default `SAMBA_DOMAIN_ACTION=start`
+to avoid repeated provisioning/DNS update noise.
+
 ```
 docker compose up -d
 ```

@@ -7,7 +7,7 @@ services:
     cap_add:
       - CAP_SYS_ADMIN
     environment:
-      DOMAIN_ACTION: provision
+      DOMAIN_ACTION: ${SAMBA_DOMAIN_ACTION:-start}
       REALM: ${SAMBA_REALM:-ad.example.com}
     volumes:
       - etc:/etc/samba
@@ -90,8 +90,8 @@ services:
       UI_PASSWORD: admin123
       DATABASE_URL: postgresql://keycloak:keycloak@postgres/litellm
       PROXY_BASE_URL: "http://localhost:4000"
-      GENERIC_CLIENT_ID: "litellm"
-      GENERIC_CLIENT_SECRET: "<YOUR_CLIENT_SECRET>"
+      GENERIC_CLIENT_ID: "litellmbifrost"
+      GENERIC_CLIENT_SECRET: "3vipPbbodUtVt9DZxTgPdM733fv2ipWm"
       GENERIC_AUTHORIZATION_ENDPOINT: "http://localhost:8080/realms/master/protocol/openid-connect/auth"
       GENERIC_TOKEN_ENDPOINT: "http://host.docker.internal:8080/realms/master/protocol/openid-connect/token"
       GENERIC_USERINFO_ENDPOINT: "http://host.docker.internal:8080/realms/master/protocol/openid-connect/userinfo"
@@ -101,12 +101,32 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  bifrost:
+    image: maximhq/bifrost:latest
+    container_name: bifrost
+    depends_on:
+      - ollama
+    environment:
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8080"
+      LOG_LEVEL: "info"
+      LOG_STYLE: "pretty"
+    ports:
+      - "4001:8080"
+    volumes:
+      - bifrost_data:/app/data
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+
 volumes:
   kc_db:
   samba_data:
   etc:
   lib:
   ollama_data:
+  bifrost_data:
 
 secrets:
   samba-admin-password:
