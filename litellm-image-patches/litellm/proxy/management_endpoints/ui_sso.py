@@ -42,18 +42,52 @@ import litellm
 from litellm.caching.dual_cache import DualCache
 from litellm._logging import verbose_proxy_logger
 from litellm._uuid import uuid
-from litellm.constants import (
-    CLI_SSO_SESSION_CACHE_KEY_PREFIX,
-    CLI_SSO_SESSION_TTL_SECONDS,
-    LITELLM_CLI_SOURCE_IDENTIFIER,
-    LITELLM_UI_SESSION_DURATION,
-    MAX_SPENDLOG_ROWS_TO_QUERY,
-    MICROSOFT_USER_DISPLAY_NAME_ATTRIBUTE,
-    MICROSOFT_USER_EMAIL_ATTRIBUTE,
-    MICROSOFT_USER_FIRST_NAME_ATTRIBUTE,
-    MICROSOFT_USER_ID_ATTRIBUTE,
-    MICROSOFT_USER_LAST_NAME_ATTRIBUTE,
-)
+try:
+    from litellm.constants import (  # type: ignore
+        CLI_SSO_SESSION_CACHE_KEY_PREFIX,
+        CLI_SSO_SESSION_TTL_SECONDS,
+        LITELLM_CLI_SOURCE_IDENTIFIER,
+        LITELLM_UI_SESSION_DURATION,
+        MAX_SPENDLOG_ROWS_TO_QUERY,
+        MICROSOFT_USER_DISPLAY_NAME_ATTRIBUTE,
+        MICROSOFT_USER_EMAIL_ATTRIBUTE,
+        MICROSOFT_USER_FIRST_NAME_ATTRIBUTE,
+        MICROSOFT_USER_ID_ATTRIBUTE,
+        MICROSOFT_USER_LAST_NAME_ATTRIBUTE,
+    )
+except ImportError:
+    import litellm.constants as _litellm_constants
+
+    CLI_SSO_SESSION_CACHE_KEY_PREFIX = getattr(
+        _litellm_constants, "CLI_SSO_SESSION_CACHE_KEY_PREFIX", "cli_sso_session:"
+    )
+    CLI_SSO_SESSION_TTL_SECONDS = getattr(
+        _litellm_constants, "CLI_SSO_SESSION_TTL_SECONDS", 600
+    )
+    LITELLM_CLI_SOURCE_IDENTIFIER = getattr(
+        _litellm_constants, "LITELLM_CLI_SOURCE_IDENTIFIER", "litellm_cli"
+    )
+    LITELLM_UI_SESSION_DURATION = getattr(
+        _litellm_constants, "LITELLM_UI_SESSION_DURATION", 60 * 60 * 24
+    )
+    MAX_SPENDLOG_ROWS_TO_QUERY = getattr(
+        _litellm_constants, "MAX_SPENDLOG_ROWS_TO_QUERY", 50_000
+    )
+    MICROSOFT_USER_DISPLAY_NAME_ATTRIBUTE = getattr(
+        _litellm_constants, "MICROSOFT_USER_DISPLAY_NAME_ATTRIBUTE", "displayName"
+    )
+    MICROSOFT_USER_EMAIL_ATTRIBUTE = getattr(
+        _litellm_constants, "MICROSOFT_USER_EMAIL_ATTRIBUTE", "mail"
+    )
+    MICROSOFT_USER_FIRST_NAME_ATTRIBUTE = getattr(
+        _litellm_constants, "MICROSOFT_USER_FIRST_NAME_ATTRIBUTE", "givenName"
+    )
+    MICROSOFT_USER_ID_ATTRIBUTE = getattr(
+        _litellm_constants, "MICROSOFT_USER_ID_ATTRIBUTE", "id"
+    )
+    MICROSOFT_USER_LAST_NAME_ATTRIBUTE = getattr(
+        _litellm_constants, "MICROSOFT_USER_LAST_NAME_ATTRIBUTE", "surname"
+    )
 from litellm.litellm_core_utils.dot_notation_indexing import get_nested_value
 from litellm.llms.custom_httpx.http_handler import (
     AsyncHTTPHandler,
@@ -75,7 +109,14 @@ from litellm.proxy._types import (
     UserAPIKeyAuth,
 )
 from litellm.proxy.auth.auth_checks import ExperimentalUIJWTToken, get_user_object
-from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+try:
+    from litellm.proxy.common_utils.user_api_key_cache import (  # type: ignore
+        UserApiKeyCache,
+    )
+except ModuleNotFoundError:
+    # Older LiteLLM images may not have this helper; the proxy provides an
+    # equivalent cache instance (often DualCache) via `proxy_server.user_api_key_cache`.
+    UserApiKeyCache = DualCache  # type: ignore
 from litellm.proxy.auth.auth_utils import (
     _get_request_ip_address,
     _has_user_setup_sso,
@@ -1592,7 +1633,16 @@ async def auth_callback(request: Request, state: Optional[str] = None):  # noqa:
     verbose_proxy_logger.info(f"Starting SSO callback with state: {state}")
 
     # Check if this is a CLI login (state starts with our CLI prefix)
-    from litellm.constants import LITELLM_CLI_SESSION_TOKEN_PREFIX
+    try:
+        from litellm.constants import LITELLM_CLI_SESSION_TOKEN_PREFIX  # type: ignore
+    except ImportError:
+        import litellm.constants as _litellm_constants
+
+        LITELLM_CLI_SESSION_TOKEN_PREFIX = getattr(
+            _litellm_constants,
+            "LITELLM_CLI_SESSION_TOKEN_PREFIX",
+            "litellm-session-token",
+        )
     from litellm.proxy._types import LiteLLM_JWTAuth
     from litellm.proxy.auth.handle_jwt import JWTHandler
     from litellm.proxy.proxy_server import (
@@ -2709,9 +2759,18 @@ class SSOAuthenticationHandler:
         The state parameter format is: {PREFIX}:{login_id}
         - The state parameter is used to pass data through the OAuth flow without changing the callback URL
         """
-        from litellm.constants import (
-            LITELLM_CLI_SESSION_TOKEN_PREFIX,
-        )
+        try:
+            from litellm.constants import (  # type: ignore
+                LITELLM_CLI_SESSION_TOKEN_PREFIX,
+            )
+        except ImportError:
+            import litellm.constants as _litellm_constants
+
+            LITELLM_CLI_SESSION_TOKEN_PREFIX = getattr(
+                _litellm_constants,
+                "LITELLM_CLI_SESSION_TOKEN_PREFIX",
+                "litellm-session-token",
+            )
 
         if source == LITELLM_CLI_SOURCE_IDENTIFIER and key:
             return f"{LITELLM_CLI_SESSION_TOKEN_PREFIX}:{key}"

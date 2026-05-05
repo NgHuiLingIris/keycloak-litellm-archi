@@ -9,7 +9,16 @@ from fastapi import HTTPException, Request, status
 import litellm
 from litellm import Router, provider_list
 from litellm._logging import verbose_proxy_logger
-from litellm.constants import STANDARD_CUSTOMER_ID_HEADERS
+try:
+    from litellm.constants import STANDARD_CUSTOMER_ID_HEADERS  # type: ignore
+except ImportError:
+    import litellm.constants as _litellm_constants
+
+    STANDARD_CUSTOMER_ID_HEADERS = getattr(
+        _litellm_constants,
+        "STANDARD_CUSTOMER_ID_HEADERS",
+        ["x-customer-id", "x-customer", "customer-id"],
+    )
 from litellm.litellm_core_utils.url_utils import SSRFError, validate_url
 from litellm.proxy._types import *
 from litellm.types.router import CONFIGURABLE_CLIENTSIDE_AUTH_PARAMS

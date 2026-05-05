@@ -73,10 +73,7 @@ services:
     restart: unless-stopped
 
   litellm:
-    build:
-      context: ./litellm-src
-      dockerfile: Dockerfile
-    image: aicoemaas/litellm-sso-unlimited:local
+    image: ghcr.io/berriai/litellm:v1.83.14-stable.patch.1
     container_name: litellm
     command: ["--config", "/app/config.yaml"]
     depends_on:
@@ -87,11 +84,17 @@ services:
       - "4000:4000"
     volumes:
       - ./litellm_config.yaml:/app/config.yaml
+      - ./litellm-image-patches/litellm/proxy/auth/auth_utils.py:/app/litellm/proxy/auth/auth_utils.py
+      - ./litellm-image-patches/litellm/proxy/management_endpoints/ui_sso.py:/app/litellm/proxy/management_endpoints/ui_sso.py
+      # LiteLLM Enterprise path differs across images; mount to both common locations.
+      - ./litellm-image-patches/litellm_enterprise/proxy/management_endpoints/internal_user_endpoints.py:/app/enterprise/litellm_enterprise/proxy/management_endpoints/internal_user_endpoints.py
+      - ./litellm-image-patches/litellm_enterprise/proxy/management_endpoints/internal_user_endpoints.py:/app/litellm_enterprise/proxy/management_endpoints/internal_user_endpoints.py
     environment:
       LITELLM_LOG: "INFO"
       LITELLM_MASTER_KEY: "sk-1234"
       UI_USERNAME: admin
       UI_PASSWORD: admin123
+      PYTHONPATH: "/app:/app/enterprise"
       DATABASE_URL: postgresql://keycloak:keycloak@postgres/litellm
       PROXY_BASE_URL: "http://localhost:4000"
       GENERIC_CLIENT_ID: "litellmclient"
@@ -106,42 +109,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  bifrost:
-    build:
-      context: ./bifrost-src
-      dockerfile: transports/Dockerfile
-    image: aicoemaas/bifrost-oidc:local
-    container_name: bifrost
-    depends_on:
-      - ollama
-      - keycloak
-    network_mode: host
-    environment:
-      APP_HOST: "0.0.0.0"
-      APP_PORT: "4001"
-      LOG_LEVEL: "info"
-      LOG_STYLE: "pretty"
-      BIFROST_ADMIN_USERNAME: ${BIFROST_ADMIN_USERNAME:-admin}
-      BIFROST_ADMIN_PASSWORD: ${BIFROST_ADMIN_PASSWORD:-admin123}
-      BIFROST_OIDC_ISSUER_URL: "http://localhost:8080/realms/master"
-      BIFROST_OIDC_CLIENT_ID: "bifrostclient"
-      BIFROST_OIDC_CLIENT_SECRET: "xOBDv9I1QYqUPZs0jwDY76sn7rrp4BD2"
-      BIFROST_OIDC_REDIRECT_URL: "http://localhost:4001/api/session/oidc/callback"
-      BIFROST_OIDC_SCOPES: "openid,profile,email"
-      BIFROST_OIDC_POST_LOGIN_PATH: "/workspace"
-    volumes:
-      - bifrost_data:/app/data
-      - ./bifrost-config.json:/app/data/config.json:ro
-    restart: unless-stopped
-
-
 volumes:
   kc_db:
   samba_data:
   etc:
   lib:
   ollama_data:
-  bifrost_data:
 
 secrets:
   samba-admin-password:
