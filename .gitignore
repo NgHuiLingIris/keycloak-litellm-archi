@@ -1,0 +1,7 @@
+*.tar
+*.pyc
+__pycache__
+onpaf/regcred.yaml
+currentprodworkspace.md
+*.pem
+.codex
