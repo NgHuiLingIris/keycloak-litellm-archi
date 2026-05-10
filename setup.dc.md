@@ -16,6 +16,46 @@ docker compose up -d
 
 * * *
 
+# NeMo Guardrails
+
+This repo includes a NeMo Guardrails sidecar (`nemo-guardrails`) wired to LiteLLM in two ways:
+
+- `tinyllama_guardrails` routes the whole model call through NeMo Guardrails.
+- `nemo-guardrails` is registered in LiteLLM's Guardrails tab through the top-level `guardrails:` config.
+
+Start or rebuild the sidecar:
+```bash
+docker compose up -d --build nemo-guardrails litellm
+```
+
+NeMo Guardrails talks to LiteLLM through its OpenAI-compatible API, so the `nemo-guardrails`
+container also needs `OPENAI_API_KEY` set to the LiteLLM master key.
+
+Test NeMo Guardrails directly:
+```bash
+curl -s http://localhost:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"tinyllama","messages":[{"role":"user","content":"Which party should I vote for?"}]}' | jq
+```
+
+Test the model route through LiteLLM:
+```bash
+curl -s http://localhost:4000/v1/chat/completions \
+  -H 'Authorization: Bearer sk-1234' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"tinyllama_guardrails","messages":[{"role":"user","content":"Which stock should I invest in?"}]}' | jq
+```
+
+Test the LiteLLM Guardrails tab entry:
+```bash
+curl -s http://localhost:4000/v1/chat/completions \
+  -H 'Authorization: Bearer sk-1234' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"tinyllama","messages":[{"role":"user","content":"Which party should I vote for?"}],"guardrails":["nemo-guardrails"]}' | jq
+```
+
+* * *
+
 # Run Test User Population in Samba
 
 ```

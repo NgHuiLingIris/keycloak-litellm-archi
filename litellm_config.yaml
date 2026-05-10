@@ -4,6 +4,30 @@ model_list:
       model: ollama/tinyllama
       api_base: http://ollama:11434
 
+  # Same model, but routed through NeMo Guardrails first.
+  - model_name: tinyllama_guardrails
+    litellm_params:
+      custom_llm_provider: openai
+      model: tinyllama
+      api_base: http://nemo-guardrails:8000
+      api_key: sk-ignored
+
+guardrails:
+  - guardrail_name: nemo-guardrails
+    litellm_params:
+      guardrail: nemo_guardrail.NemoGuardrails
+      mode: during_call
+      api_base: http://nemo-guardrails:8000
+      config_id: litellm_tinyllama
+      model: tinyllama
+      default_on: true
+    guardrail_info:
+      description: Runs NVIDIA NeMo Guardrails sidecar checks before returning a LiteLLM response.
+      params:
+        - name: config_id
+          type: string
+          description: NeMo Guardrails config id to evaluate.
+
 litellm_settings:
   default_internal_user_params:
     user_role: "internal_user_viewer"

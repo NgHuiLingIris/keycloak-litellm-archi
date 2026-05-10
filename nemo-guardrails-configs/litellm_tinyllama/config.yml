@@ -1,0 +1,11 @@
+models:
+  - type: main
+    # The NeMo Guardrails server will override the main model with whatever `model`
+    # is sent to `/v1/chat/completions` (see `MAIN_MODEL_*` env vars below).
+    # This is kept as a sensible default for direct calls to the Guardrails server.
+    engine: openai
+    model: tinyllama
+    api_key_env_var: LITELLM_MASTER_KEY
+    parameters:
+      base_url: http://litellm:4000
+

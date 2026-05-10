@@ -84,6 +84,7 @@ services:
       - "4000:4000"
     volumes:
       - ./litellm_config.yaml:/app/config.yaml
+      - ./litellm_custom_guardrails/nemo_guardrail.py:/app/nemo_guardrail.py
       - ./litellm-image-patches/litellm/proxy/auth/auth_utils.py:/app/litellm/proxy/auth/auth_utils.py
       - ./litellm-image-patches/litellm/proxy/management_endpoints/ui_sso.py:/app/litellm/proxy/management_endpoints/ui_sso.py
       # LiteLLM Enterprise path differs across images; mount to both common locations.
@@ -108,6 +109,31 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  nemo-guardrails:
+    build:
+      context: .
+      dockerfile: ./nemo-guardrails-image/Dockerfile
+    container_name: nemo-guardrails
+    depends_on:
+      - litellm
+    environment:
+      # Default config used when the incoming request doesn't include `guardrails.config_id`.
+      DEFAULT_CONFIG_ID: litellm_tinyllama
+
+      # When the request includes `model` (LiteLLM does), NeMo Guardrails overrides the
+      # main model using these env vars.
+      MAIN_MODEL_ENGINE: openai
+      MAIN_MODEL_BASE_URL: http://litellm:4000
+
+      # Used by NeMo Guardrails when calling LiteLLM (OpenAI-compatible).
+      LITELLM_MASTER_KEY: "sk-1234"
+      OPENAI_API_KEY: "sk-1234"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./nemo-guardrails-configs/litellm_tinyllama:/config/litellm_tinyllama:ro
+    restart: unless-stopped
 
 volumes:
   kc_db:
