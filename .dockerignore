@@ -1,0 +1,8 @@
+*
+
+!vendor/
+!vendor/bifrost/
+!vendor/bifrost/**
+
+!bifrost-image-patches/
+!bifrost-image-patches/**

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "providers": {
+    "ollama": {
+      "keys": [
+        {
+          "name": "ollama-local",
+          "value": "",
+          "models": ["*"],
+          "weight": 1.0,
+          "ollama_key_config": {
+            "url": "env.OLLAMA_URL"
+          }
+        }
+      ]
+    }
+  },
+  "governance": {
+    "auth_config": {
+      "admin_username": "env.BIFROST_ADMIN_USERNAME",
+      "admin_password": "env.BIFROST_ADMIN_PASSWORD",
+      "is_enabled": true,
+      "disable_auth_on_inference": true
+    }
+  }
+}

@@ -26,7 +26,7 @@ services:
       POSTGRES_DB: keycloak
       POSTGRES_USER: keycloak
       POSTGRES_PASSWORD: keycloak
-      POSTGRES_MULTIPLE_DATABASES: litellm
+      POSTGRES_MULTIPLE_DATABASES: litellm,bifrost
     volumes:
       - kc_db:/var/lib/postgresql/data
       - ./scripts/pg_multiple_databases.sh:/docker-entrypoint-initdb.d/pg_multiple_databases.sh
@@ -109,12 +109,65 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  bifrost:
+    image: aicoemaas/bifrost:v1.5.0-sso-topup
+    build:
+      context: .
+      dockerfile: bifrost-image-patches/Dockerfile
+      args:
+        BIFROST_BASE_IMAGE: maximhq/bifrost:v1.5.0
+        VERSION: 1.5.0-sso-topup
+    container_name: bifrost
+    depends_on:
+      - postgres
+      - keycloak
+      - ollama
+    ports:
+      - "4001:8080"
+    volumes:
+      - bifrost_data:/app/data
+      - ./bifrost_config.json:/app/data/config.json:ro
+    environment:
+      APP_PORT: "8080"
+      APP_HOST: "0.0.0.0"
+      LOG_LEVEL: "info"
+      LOG_STYLE: "json"
+      BIFROST_ADMIN_USERNAME: admin
+      BIFROST_ADMIN_PASSWORD: admin123
+      BIFROST_SSO_ENABLED: "true"
+      BIFROST_SSO_CLIENT_ID: "bifrostclient"
+      BIFROST_SSO_CLIENT_SECRET: "bifrost-secret"
+      BIFROST_SSO_AUTHORIZATION_ENDPOINT: "http://localhost:8080/realms/master/protocol/openid-connect/auth"
+      BIFROST_SSO_TOKEN_ENDPOINT: "http://host.docker.internal:8080/realms/master/protocol/openid-connect/token"
+      BIFROST_SSO_USERINFO_ENDPOINT: "http://host.docker.internal:8080/realms/master/protocol/openid-connect/userinfo"
+      BIFROST_SSO_REDIRECT_URI: "http://localhost:4001/api/session/sso/callback"
+      BIFROST_SSO_SCOPES: "openid email profile"
+      BIFROST_SSO_LOGIN_REDIRECT: "/workspace"
+      BIFROST_KEYCLOAK_ADMIN_BASE_URL: "http://host.docker.internal:8080"
+      BIFROST_KEYCLOAK_REALM: "master"
+      BIFROST_KEYCLOAK_ADMIN_USERNAME: admin
+      BIFROST_KEYCLOAK_ADMIN_PASSWORD: admin
+      OLLAMA_URL: "http://ollama:11434"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
   kc_db:
   samba_data:
   etc:
   lib:
   ollama_data:
+  bifrost_data:
 
 secrets:
   samba-admin-password:
